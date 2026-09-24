@@ -1,0 +1,6 @@
+{
+  "name": "Singapore Travel & Navigation Assistant",
+  "description": "Singapore travel and navigation assistant combining OneMap search and routing with real-time 2-hour weather forecasts from data.gov.sg.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
