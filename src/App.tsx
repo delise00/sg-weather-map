@@ -7,7 +7,7 @@ import { WeatherCard } from './components/WeatherCard.tsx';
 import { DemoActionsBar } from './components/DemoActionsBar.tsx';
 import { ApiHealthModal } from './components/ApiHealthModal.tsx';
 import { LocationItem, RouteResult, TravelMode, WeatherInfo } from './types/index.ts';
-import { searchLocations, getDirections, getWeather, checkApiHealth } from './services/api.ts';
+import { searchLocations, getDirections, getWeather, checkApiHealth, reverseGeocodeLocation } from './services/api.ts';
 
 // Raffles Place default initial coordinates
 const RAFFLES_PLACE: LocationItem = {
@@ -117,7 +117,7 @@ export default function App() {
   };
 
   // Handle Map Click
-  const handleSelectMapLocation = (lat: number, lng: number) => {
+  const handleSelectMapLocation = async (lat: number, lng: number) => {
     const clickedItem: LocationItem = {
       searchVal: `Pinned Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
       address: `Coordinates: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
@@ -126,6 +126,13 @@ export default function App() {
     };
     setSelectedLocation(clickedItem);
     fetchWeatherData(lat, lng);
+
+    try {
+      const resolved = await reverseGeocodeLocation(lat, lng);
+      setSelectedLocation(resolved);
+    } catch {
+      // Keep basic coordinates
+    }
   };
 
   // Handle Swap Start and Destination

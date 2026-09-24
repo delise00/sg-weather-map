@@ -9,9 +9,10 @@ import {
   Server,
   ExternalLink,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { HealthCheckResponse } from '../types/index.ts';
-import { checkApiHealth, setApiCredentials } from '../services/api.ts';
+import { checkApiHealth, setApiCredentials, getStoredToken, setStoredToken } from '../services/api.ts';
 
 interface ApiHealthModalProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
   const [healthData, setHealthData] = useState<HealthCheckResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
+  const [currentToken, setCurrentToken] = useState<string | null>(null);
   const [tokenMsg, setTokenMsg] = useState<string | null>(null);
 
   const fetchHealth = async () => {
@@ -39,6 +41,8 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
   useEffect(() => {
     if (isOpen) {
       fetchHealth();
+      const stored = getStoredToken();
+      setCurrentToken(stored);
     }
   }, [isOpen]);
 
@@ -46,13 +50,23 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
     e.preventDefault();
     if (!tokenInput.trim()) return;
     try {
-      const res = await setApiCredentials(tokenInput.trim());
-      setTokenMsg(res.message || 'Token saved in server memory');
+      const trimmed = tokenInput.trim();
+      setStoredToken(trimmed);
+      await setApiCredentials(trimmed).catch(() => {});
+      setCurrentToken(trimmed);
+      setTokenMsg('OneMap token saved! Active for Search, Reverse Geocode & Routing.');
       setTokenInput('');
       fetchHealth();
     } catch (err: any) {
       setTokenMsg(`Error saving token: ${err.message}`);
     }
+  };
+
+  const handleClearToken = () => {
+    setStoredToken(null);
+    setCurrentToken(null);
+    setTokenMsg('OneMap token removed. Free mode active (OSRM + Nominatim + data.gov.sg).');
+    fetchHealth();
   };
 
   if (!isOpen) return null;
@@ -191,32 +205,57 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
             </div>
           </div>
 
-          {/* Quick Token Tester for Grader / Evaluator */}
-          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-blue-900">
-              <Key className="w-4 h-4 text-blue-600" />
-              <span>OneMap Routing Token Configuration</span>
+          {/* OneMap Token Configuration */}
+          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-blue-900">
+                <Key className="w-4 h-4 text-blue-600" />
+                <span>OneMap API Token (Optional)</span>
+              </div>
+              {currentToken && (
+                <button
+                  type="button"
+                  onClick={handleClearToken}
+                  className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove Token</span>
+                </button>
+              )}
             </div>
+
             <p className="text-xs text-blue-800">
-              OneMap route endpoint requires an authorization token. You can configure{' '}
-              <code className="bg-blue-100 px-1 py-0.5 rounded">ONEMAP_TOKEN</code> in your server{' '}
-              <code className="bg-blue-100 px-1 py-0.5 rounded">.env</code>, or test a temporary token in server memory here:
+              OneMap APIs require a registered authorization token for full access. Free OpenStreetMap (OSRM) + Nominatim and real-time data.gov.sg weather are active automatically when no token is provided.
             </p>
-            <form onSubmit={handleSaveToken} className="flex gap-2">
-              <input
-                type="text"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="Paste OneMap access token..."
-                className="flex-1 px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition cursor-pointer"
-              >
-                Set Token
-              </button>
-            </form>
+
+            {currentToken ? (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-emerald-800">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span className="font-semibold">OneMap Token Active</span>
+                  <span className="text-[11px] text-emerald-600 font-mono">
+                    ({currentToken.slice(0, 10)}...{currentToken.slice(-6)})
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveToken} className="flex gap-2">
+                <input
+                  type="text"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="Paste OneMap access token (Bearer or raw token)..."
+                  className="flex-1 px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                />
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+                >
+                  Save Token
+                </button>
+              </form>
+            )}
+
             {tokenMsg && (
               <p className="text-[11px] text-blue-700 font-medium">{tokenMsg}</p>
             )}
