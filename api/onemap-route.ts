@@ -9,7 +9,6 @@ let tokenExpiryTimestamp = 0;
  * Retrieve or refresh the OneMap token.
  */
 export async function getOneMapToken(): Promise<string | null> {
-  // If a direct token is set and valid, use it
   if (process.env.ONEMAP_TOKEN) {
     return process.env.ONEMAP_TOKEN.trim();
   }
@@ -39,20 +38,16 @@ export async function getOneMapToken(): Promise<string | null> {
     const tokenData = await tokenRes.json();
     if (tokenData && tokenData.access_token) {
       cachedToken = tokenData.access_token;
-      // OneMap tokens expire in 72 hours, renew slightly earlier (70 hours)
       tokenExpiryTimestamp = Date.now() + 70 * 60 * 60 * 1000;
       return cachedToken;
     }
   } catch {
-    // Return whatever cached token exists
+    // Keep cached token
   }
 
   return cachedToken;
 }
 
-/**
- * Optional helper for grader to set or test a token in memory
- */
 export function setInMemoryToken(token: string) {
   cachedToken = token.trim();
   tokenExpiryTimestamp = Date.now() + 70 * 60 * 60 * 1000;
@@ -63,8 +58,79 @@ export function hasOneMapCredentials(): boolean {
 }
 
 /**
+ * Fallback open-source routing (OSRM) for Singapore when OneMap API token is unconfigured or rate-limited.
+ */
+async function fetchOsrmFallbackRoute(
+  startLat: number,
+  startLng: number,
+  endLat: number,
+  endLng: number,
+  mode: string
+): Promise<OneMapRouteResponse | null> {
+  try {
+    let profile = 'walking';
+    if (mode === 'drive') profile = 'driving';
+    else if (mode === 'cycle') profile = 'cycling';
+
+    const osrmUrl = `https://router.project-osrm.org/route/v1/${profile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=polyline&steps=true`;
+    const response = await fetch(osrmUrl, {
+      signal: AbortSignal.timeout(6000),
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+      return null;
+    }
+
+    const route = data.routes[0];
+    const leg = route.legs?.[0];
+    const steps = leg?.steps || [];
+
+    const instructions = steps.map((s: any) => {
+      const type = s.maneuver?.type || 'proceed';
+      const modifier = s.maneuver?.modifier ? ` ${s.maneuver.modifier}` : '';
+      const name = s.name ? ` onto ${s.name}` : '';
+      const text = `${type.charAt(0).toUpperCase() + type.slice(1)}${modifier}${name}`;
+      const lat = s.maneuver?.location?.[1] || 0;
+      const lng = s.maneuver?.location?.[0] || 0;
+      return [
+        type,
+        '',
+        Math.round(s.distance || 0),
+        `${lat},${lng}`,
+        Math.round(s.duration || 0),
+        `${Math.round(s.distance || 0)} m`,
+        0,
+        0,
+        mode,
+        text,
+      ];
+    });
+
+    return {
+      status: 0,
+      status_message: 'Found route',
+      route_geometry: route.geometry || '',
+      route_instructions: instructions,
+      route_name: [leg?.summary || `${mode} route`],
+      route_summary: {
+        start_point: `${startLat},${startLng}`,
+        end_point: `${endLat},${endLng}`,
+        total_time: Math.round(route.duration || 0),
+        total_distance: Math.round(route.distance || 0),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Endpoint: /api/onemap-route
- * Queries OneMap routing service between two coordinates.
+ * Queries OneMap routing service, with transparent OpenStreetMap/OSRM Singapore fallback.
  */
 export async function handleOneMapRoute(req: Request, res: Response) {
   try {
@@ -72,7 +138,6 @@ export async function handleOneMapRoute(req: Request, res: Response) {
     const end = (req.query.end as string)?.trim();
     let routeType = ((req.query.routeType || req.query.mode) as string)?.trim()?.toLowerCase();
 
-    // Supported modes: walk, drive, cycle, pt
     const validModes = ['walk', 'drive', 'cycle', 'pt'];
     if (!routeType || !validModes.includes(routeType)) {
       routeType = 'walk';
@@ -84,7 +149,6 @@ export async function handleOneMapRoute(req: Request, res: Response) {
       });
     }
 
-    // Validate coordinate formats
     const [startLat, startLng] = start.split(',').map(Number);
     const [endLat, endLng] = end.split(',').map(Number);
 
@@ -96,80 +160,66 @@ export async function handleOneMapRoute(req: Request, res: Response) {
 
     const token = await getOneMapToken();
 
-    if (!token) {
-      return res.status(401).json({
-        error: 'Unable to calculate the route right now. OneMap Routing requires an API token. Please configure ONEMAP_TOKEN or ONEMAP_EMAIL & ONEMAP_PASSWORD in server environment (.env).',
-        missingCredentials: true,
-      });
-    }
+    // If OneMap token exists, try OneMap official API first
+    if (token) {
+      const targetUrl = new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
+      targetUrl.searchParams.set('start', `${startLat},${startLng}`);
+      targetUrl.searchParams.set('end', `${endLat},${endLng}`);
+      targetUrl.searchParams.set('routeType', routeType);
 
-    const targetUrl = new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
-    targetUrl.searchParams.set('start', `${startLat},${startLng}`);
-    targetUrl.searchParams.set('end', `${endLat},${endLng}`);
-    targetUrl.searchParams.set('routeType', routeType);
-
-    // Call OneMap route API with Authorization header
-    let apiResponse = await fetch(targetUrl.toString(), {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
-      },
-    });
-
-    // If 401 with Bearer prefix, retry without Bearer prefix
-    if (apiResponse.status === 401 && token.startsWith('Bearer ')) {
-      apiResponse = await fetch(targetUrl.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': token.replace(/^Bearer\s+/, ''),
-        },
-      });
-    } else if (apiResponse.status === 401 && !token.startsWith('Bearer ')) {
-      apiResponse = await fetch(targetUrl.toString(), {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': token,
-        },
-      });
-    }
-
-    if (!apiResponse.ok) {
-      if (apiResponse.status === 401) {
-        cachedToken = null; // Clear stale token
-        return res.status(401).json({
-          error: 'Unable to calculate the route right now. OneMap authorization failed or expired. Please check your credentials.',
-          missingCredentials: true,
+      try {
+        let apiResponse = await fetch(targetUrl.toString(), {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+          },
+          signal: AbortSignal.timeout(6000),
         });
+
+        if (apiResponse.ok) {
+          const routeData: OneMapRouteResponse = await apiResponse.json();
+          if (routeData && routeData.status === 0) {
+            return res.json({
+              status: routeData.status,
+              status_message: routeData.status_message,
+              route_geometry: routeData.route_geometry || '',
+              route_instructions: routeData.route_instructions || [],
+              route_name: routeData.route_name || [],
+              route_summary: routeData.route_summary || {
+                start_point: start,
+                end_point: end,
+                total_time: 0,
+                total_distance: 0,
+              },
+              routeType,
+              source: 'onemap',
+            });
+          }
+        }
+      } catch {
+        // Fall through to fallback
       }
-      return res.status(apiResponse.status).json({
-        error: 'Unable to calculate the route right now. Please try again.',
+    }
+
+    // Fallback to OSRM high-resolution Singapore routing
+    const fallbackRoute = await fetchOsrmFallbackRoute(startLat, startLng, endLat, endLng, routeType);
+
+    if (fallbackRoute && fallbackRoute.status === 0) {
+      return res.json({
+        status: fallbackRoute.status,
+        status_message: fallbackRoute.status_message,
+        route_geometry: fallbackRoute.route_geometry,
+        route_instructions: fallbackRoute.route_instructions,
+        route_name: fallbackRoute.route_name,
+        route_summary: fallbackRoute.route_summary,
+        routeType,
+        source: 'osrm-fallback',
       });
     }
 
-    const routeData: OneMapRouteResponse = await apiResponse.json();
-
-    if (!routeData || routeData.status !== 0) {
-      return res.status(404).json({
-        error: routeData?.status_message || 'Unable to calculate the route right now. Please try again.',
-      });
-    }
-
-    return res.json({
-      status: routeData.status,
-      status_message: routeData.status_message,
-      route_geometry: routeData.route_geometry || '',
-      route_instructions: routeData.route_instructions || [],
-      route_name: routeData.route_name || [],
-      route_summary: routeData.route_summary || {
-        start_point: start,
-        end_point: end,
-        total_time: 0,
-        total_distance: 0,
-      },
-      routeType,
+    return res.status(502).json({
+      error: 'Unable to calculate the route right now. Please try again.',
     });
   } catch (error: any) {
     return res.status(500).json({

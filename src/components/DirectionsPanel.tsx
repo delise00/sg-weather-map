@@ -181,7 +181,7 @@ export const DirectionsPanel: React.FC<DirectionsPanelProps> = ({
             type="button"
             onClick={onGetDirections}
             disabled={!canRequestDirections || isLoading}
-            className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+            className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
@@ -195,6 +195,15 @@ export const DirectionsPanel: React.FC<DirectionsPanelProps> = ({
               </>
             )}
           </button>
+          {!canRequestDirections && (
+            <p className="text-[11px] text-center text-slate-500 mt-1.5">
+              {!startLocation && !destinationLocation
+                ? 'Select or search a location and set Point A and Point B to navigate'
+                : !destinationLocation
+                ? 'Please set a Destination (Point B) by clicking on the map or searching above'
+                : 'Please set a Start location (Point A)'}
+            </p>
+          )}
         </div>
       </div>
 

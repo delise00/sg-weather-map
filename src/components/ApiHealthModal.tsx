@@ -179,21 +179,14 @@ export const ApiHealthModal: React.FC<ApiHealthModalProps> = ({ isOpen, onClose 
                   <span className="text-[11px] font-mono text-slate-400">/api/onemap-route</span>
                 </div>
                 <div className="text-xs text-slate-600 mt-1">
-                  {healthData?.services.onemapRoute.message || 'Checking credentials...'}
+                  {healthData?.services.onemapRoute.message || 'Operational'}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  Credentials configured:{' '}
-                  <strong>{healthData?.services.onemapRoute.hasCredentials ? 'Yes' : 'No'}</strong>
+                  OneMap Token: <strong>{healthData?.services.onemapRoute.hasCredentials ? 'Configured' : 'Optional (OSRM Fallback Active)'}</strong>
                 </div>
               </div>
-              <span
-                className={`text-xs px-2 py-0.5 rounded font-medium ${
-                  healthData?.services.onemapRoute.hasCredentials
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}
-              >
-                {healthData?.services.onemapRoute.hasCredentials ? 'Ready' : 'Awaiting Token'}
+              <span className="text-xs px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800">
+                Operational
               </span>
             </div>
           </div>

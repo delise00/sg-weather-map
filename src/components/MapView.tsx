@@ -122,49 +122,57 @@ export const MapView: React.FC<MapViewProps> = ({
         zIndexOffset: 1000,
       }).addTo(map);
 
-      const popupContent = document.createElement('div');
-      popupContent.className = 'p-1 text-slate-800 font-sans';
-      popupContent.innerHTML = `
-        <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 2px;">
-          ${selectedLocation.building || selectedLocation.searchVal}
-        </div>
-        <div style="font-size: 11px; color: #475569; margin-bottom: 4px;">
-          ${selectedLocation.address}
-        </div>
-        ${
-          selectedLocation.postal
-            ? `<div style="font-size: 11px; font-family: monospace; color: #64748b; margin-bottom: 8px;">Postal: ${selectedLocation.postal}</div>`
-            : ''
-        }
-        <div style="display: flex; gap: 6px; margin-top: 6px;">
-          <button id="popup-start-btn" style="padding: 4px 8px; font-size: 11px; font-weight: 600; background-color: #059669; color: #ffffff; border: none; border-radius: 4px; cursor: pointer;">
-            Set as Start
-          </button>
-          <button id="popup-dest-btn" style="padding: 4px 8px; font-size: 11px; font-weight: 600; background-color: #4f46e5; color: #ffffff; border: none; border-radius: 4px; cursor: pointer;">
-            Set as Dest
-          </button>
-        </div>
-      `;
+      // Create DOM elements programmatically so event listeners are always attached reliably
+      const container = document.createElement('div');
+      container.className = 'p-1 text-slate-800 font-sans';
 
-      // Attach button events after popup open
-      marker.bindPopup(popupContent);
-      marker.on('popupopen', () => {
-        const startBtn = document.getElementById('popup-start-btn');
-        const destBtn = document.getElementById('popup-dest-btn');
-        if (startBtn) {
-          startBtn.onclick = () => {
-            onSetAsStart(selectedLocation);
-            marker.closePopup();
-          };
-        }
-        if (destBtn) {
-          destBtn.onclick = () => {
-            onSetAsDestination(selectedLocation);
-            marker.closePopup();
-          };
-        }
+      const title = document.createElement('div');
+      title.className = 'font-bold text-sm text-slate-900 mb-0.5';
+      title.textContent = selectedLocation.building || selectedLocation.searchVal;
+      container.appendChild(title);
+
+      const address = document.createElement('div');
+      address.className = 'text-xs text-slate-600 mb-1';
+      address.textContent = selectedLocation.address;
+      container.appendChild(address);
+
+      if (selectedLocation.postal) {
+        const postal = document.createElement('div');
+        postal.className = 'text-[11px] font-mono text-slate-500 mb-2';
+        postal.textContent = `Postal: ${selectedLocation.postal}`;
+        container.appendChild(postal);
+      }
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'flex items-center gap-1.5 mt-2';
+
+      const startBtn = document.createElement('button');
+      startBtn.type = 'button';
+      startBtn.textContent = 'Set as Start';
+      startBtn.className =
+        'px-2.5 py-1 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition';
+      startBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onSetAsStart(selectedLocation);
+        marker.closePopup();
       });
+      btnRow.appendChild(startBtn);
 
+      const destBtn = document.createElement('button');
+      destBtn.type = 'button';
+      destBtn.textContent = 'Set as Dest';
+      destBtn.className =
+        'px-2.5 py-1 text-xs font-semibold rounded bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer transition';
+      destBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onSetAsDestination(selectedLocation);
+        marker.closePopup();
+      });
+      btnRow.appendChild(destBtn);
+
+      container.appendChild(btnRow);
+
+      marker.bindPopup(container);
       selectedMarkerRef.current = marker;
 
       // Only fly to marker if there is no active route display
@@ -174,7 +182,7 @@ export const MapView: React.FC<MapViewProps> = ({
         });
       }
     }
-  }, [selectedLocation]);
+  }, [selectedLocation, onSetAsStart, onSetAsDestination, routeResult]);
 
   // Update Start & Destination Markers
   useEffect(() => {
@@ -265,6 +273,39 @@ export const MapView: React.FC<MapViewProps> = ({
     <div className="relative w-full h-[450px] md:h-[540px] rounded-2xl overflow-hidden border border-slate-300 shadow-lg bg-slate-100">
       {/* Map DOM target */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+      {/* Selected location quick-action floating pill on top-left of map */}
+      {selectedLocation && (
+        <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 p-2.5 flex items-center gap-2 max-w-[85%] sm:max-w-md">
+          <div className="p-1.5 rounded-lg bg-rose-100 text-rose-600 shrink-0">
+            <MapPin className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-xs text-slate-900 truncate">
+              {selectedLocation.building || selectedLocation.searchVal}
+            </div>
+            <div className="text-[11px] text-slate-500 truncate">
+              {selectedLocation.address}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => onSetAsStart(selectedLocation)}
+              className="px-2 py-1 text-[11px] font-semibold rounded bg-emerald-600 hover:bg-emerald-700 text-white transition cursor-pointer"
+            >
+              Start
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetAsDestination(selectedLocation)}
+              className="px-2 py-1 text-[11px] font-semibold rounded bg-indigo-600 hover:bg-indigo-700 text-white transition cursor-pointer"
+            >
+              Dest
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Top right floating layer / theme switch controls */}
       <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
